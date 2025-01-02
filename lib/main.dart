@@ -15,6 +15,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      locale: const Locale('vi', 'VN'),
       title: 'Modern Notes App',
       theme: ThemeData(
         useMaterial3: true,

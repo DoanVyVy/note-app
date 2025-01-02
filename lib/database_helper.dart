@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('notes_app.db');
+    _database = await _initDB('notes.db');
     return _database!;
   }
 
@@ -20,45 +20,44 @@ class DatabaseHelper {
     return await openDatabase(path, version: 1, onCreate: _createDB);
   }
 
-  Future _createDB(Database db, int version) async {
+  Future<void> _createDB(Database db, int version) async {
     await db.execute('''
-    CREATE TABLE users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL
-    )
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL
+      )
     ''');
 
     await db.execute('''
-    CREATE TABLE folders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      color INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-    )
+      CREATE TABLE folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        color INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+      )
     ''');
 
     await db.execute('''
-    CREATE TABLE notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      content TEXT,
-      color INTEGER NOT NULL,
-      folder_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-    )
+      CREATE TABLE notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        color INTEGER NOT NULL,
+        folder_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        FOREIGN KEY (folder_id) REFERENCES folders (id),
+        FOREIGN KEY (user_id) REFERENCES users (id)
+      )
     ''');
   }
 
   // User operations
   Future<User?> getUser(String username, String password) async {
-    final db = await instance.database;
+    final db = await database;
     final maps = await db.query(
       'users',
-      columns: ['id', 'username', 'password'],
       where: 'username = ? AND password = ?',
       whereArgs: [username, password],
     );
@@ -69,31 +68,39 @@ class DatabaseHelper {
     return null;
   }
 
-  Future<int> insertUser(User user) async {
-    final db = await instance.database;
-    return db.insert('users', user.toMap());
+  Future<User> insertUser(User user) async {
+    final db = await database;
+    final id = await db.insert('users', user.toMap());
+    return User(
+      id: id,
+      username: user.username,
+      password: user.password,
+    );
   }
 
-  // Folder operations
   Future<List<Folder>> getFolders(int userId) async {
-    final db = await instance.database;
+    final db = await database;
     final maps = await db.query(
       'folders',
-      columns: ['id', 'name', 'color', 'user_id'],
       where: 'user_id = ?',
       whereArgs: [userId],
     );
-
-    return List.generate(maps.length, (i) => Folder.fromMap(maps[i]));
+    return maps.map((map) => Folder.fromMap(map)).toList();
   }
 
-  Future<int> insertFolder(Folder folder) async {
-    final db = await instance.database;
-    return db.insert('folders', folder.toMap());
+  Future<Folder> insertFolder(Folder folder) async {
+    final db = await database;
+    final id = await db.insert('folders', folder.toMap());
+    return Folder(
+      id: id,
+      name: folder.name,
+      color: folder.color,
+      userId: folder.userId,
+    );
   }
 
   Future<int> updateFolder(Folder folder) async {
-    final db = await instance.database;
+    final db = await database;
     return db.update(
       'folders',
       folder.toMap(),
@@ -103,7 +110,7 @@ class DatabaseHelper {
   }
 
   Future<int> deleteFolder(int id) async {
-    final db = await instance.database;
+    final db = await database;
     return db.delete(
       'folders',
       where: 'id = ?',
@@ -111,26 +118,31 @@ class DatabaseHelper {
     );
   }
 
-  // Note operations
   Future<List<Note>> getNotes(int folderId, int userId) async {
-    final db = await instance.database;
+    final db = await database;
     final maps = await db.query(
       'notes',
-      columns: ['id', 'title', 'content', 'color', 'folder_id', 'user_id'],
       where: 'folder_id = ? AND user_id = ?',
       whereArgs: [folderId, userId],
     );
-
-    return List.generate(maps.length, (i) => Note.fromMap(maps[i]));
+    return maps.map((map) => Note.fromMap(map)).toList();
   }
 
-  Future<int> insertNote(Note note) async {
-    final db = await instance.database;
-    return db.insert('notes', note.toMap());
+  Future<Note> insertNote(Note note) async {
+    final db = await database;
+    final id = await db.insert('notes', note.toMap());
+    return Note(
+      id: id,
+      title: note.title,
+      content: note.content,
+      color: note.color,
+      folderId: note.folderId,
+      userId: note.userId,
+    );
   }
 
   Future<int> updateNote(Note note) async {
-    final db = await instance.database;
+    final db = await database;
     return db.update(
       'notes',
       note.toMap(),
@@ -140,11 +152,36 @@ class DatabaseHelper {
   }
 
   Future<int> deleteNote(int id) async {
-    final db = await instance.database;
+    final db = await database;
     return db.delete(
       'notes',
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<List<Folder>> searchFolders(int userId, String query) async {
+    final db = await database;
+    final maps = await db.query(
+      'folders',
+      where: 'user_id = ? AND name LIKE ?',
+      whereArgs: [userId, '%$query%'],
+    );
+    return maps.map((map) => Folder.fromMap(map)).toList();
+  }
+
+  Future<List<Note>> searchNotes(int userId, String query) async {
+    final db = await database;
+    final maps = await db.query(
+      'notes',
+      where: 'user_id = ? AND (title LIKE ? OR content LIKE ?)',
+      whereArgs: [userId, '%$query%', '%$query%'],
+    );
+    return maps.map((map) => Note.fromMap(map)).toList();
+  }
+
+  Future<void> close() async {
+    final db = await instance.database;
+    db.close();
   }
 }
